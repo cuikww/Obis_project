@@ -22,6 +22,12 @@ const userSchema = new mongoose.Schema({
         type:Boolean,
         default: false
     },
+    role: {
+        type: String,
+        enum: ["super-admin", "admin-po", "customer"],
+        default: "customer",
+    },
+
     resetPasswordToken : String,
     resetPasswordExpiresAt: Date,
     verificationToken: String,

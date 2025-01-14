@@ -23,6 +23,7 @@ export const signup = async(req, res) => {
             email,
             password:hashedPassword,
             name,
+            role:"super-admin",
             verificationToken,
             verificationTokenExpiresAt: Date.now() + 24 *60 *60*1000//24 jam
         })
@@ -77,7 +78,7 @@ export const login = async(req, res) => {
     const {email, password}= req.body;
     try{
         const user = await User.findOne({email})
-        if(!user){
+        if(!user || user.role != "customer"){
             throw new Error("User not found")
         }
         const isPasswordValid = await bcryptjs.compare(password, user.password)
@@ -160,5 +161,33 @@ export const checkAuth = async(req, res) => {
     } catch (error) {
         res.status(400).json({success:false, message:error.message})
         console.log("error in checkAuth", error)
+    }
+}
+
+export const SuperAdminLogin = async(req, res) => {
+    const {email, password}= req.body;
+    try{
+        const user = await User.findOne({email})
+        if(!user || user.role != "super-admin"){
+            throw new Error("User not found")
+        }
+        const isPasswordValid = await bcryptjs.compare(password, user.password)
+        if(!isPasswordValid){
+            throw new Error("Invalid credentials")
+        }
+
+        generateTokenAndSetCookie(res, user._id);
+        user.lastLogin = new Date();
+
+        await user.save();
+
+        res.status(200).json({
+            success:true,
+            message:"Login successful",
+            user:{
+                ...user._doc, password:undefined}
+        })
+    }catch (error){
+        res.status(400).json({success:false, message : error.message})
     }
 }
