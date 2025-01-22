@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import {User} from '../models/user.model.js'
 import {generateTokenAndSetCookie} from '../utils/generateTokenAndSetCookie.js'
 import {sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail, sendResetSuccessEmail} from '../mailtrap/emails.js'
+import { Po_Bus } from '../models/po.model.js'
 
 export const signup = async(req, res) => {
     const {email, password, name} = req.body
@@ -169,6 +170,88 @@ export const SuperAdminLogin = async(req, res) => {
     try{
         const user = await User.findOne({email})
         if(!user || user.role != "super-admin"){
+            throw new Error("User not found")
+        }
+        const isPasswordValid = await bcryptjs.compare(password, user.password)
+        if(!isPasswordValid){
+            throw new Error("Invalid credentials")
+        }
+
+        generateTokenAndSetCookie(res, user._id);
+        user.lastLogin = new Date();
+
+        await user.save();
+
+        res.status(200).json({
+            success:true,
+            message:"Login successful",
+            user:{
+                ...user._doc, password:undefined}
+        })
+    }catch (error){
+        res.status(400).json({success:false, message : error.message})
+    }
+}
+
+export const admin_po_register = async (req, res) => {
+    const { email, password, name, id_po, secret_key } = req.body;
+    try {
+        if (!email || !password || !name || !id_po || !secret_key) {
+            throw new Error("All fields are required");
+        }
+
+        const userAlreadyExist = await User.findOne({ email });
+        if (userAlreadyExist) {
+            return res.status(400).json({ success: false, message: "User already exists" });
+        }
+
+        const po_bus = await Po_Bus.findById(id_po);
+        if (!po_bus) {
+            throw new Error("PO bus tidak ditemukan!");
+        }
+
+        const isSecretKeyValid = await bcryptjs.compare(secret_key, po_bus.secret_key);
+        if (!isSecretKeyValid) {
+            throw new Error("Secret Key Anda Salah!");
+        }
+
+        const hashedPassword = await bcryptjs.hash(password, 10);
+        const verificationToken = Math.floor(100000 + Math.random() * 900000).toString();
+
+        const user = new User({
+            email,
+            password: hashedPassword,
+            name,
+            role: "admin-po",
+            po_bus:id_po,
+            verificationToken,
+            verificationTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 jam
+        });
+        await user.save();
+
+        // jwt
+        generateTokenAndSetCookie(res, user._id);
+
+        await sendVerificationEmail(user.email, verificationToken);
+
+        res.status(201).json({
+            success: true,
+            message: "User created successfully",
+            user: {
+                ...user._doc,
+                password: undefined,
+            },
+        });
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+export const admin_po_login = async(req, res) => {
+    const {email, password}= req.body;
+    try{
+        const user = await User.findOne({email})
+        if(!user || user.role != "admin-po"){
             throw new Error("User not found")
         }
         const isPasswordValid = await bcryptjs.compare(password, user.password)

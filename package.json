@@ -1,5 +1,5 @@
 {
-  "name": "Obis",
+  "name": "obis2025",
   "version": "1.0.0",
   "main": "backend/index.js",
   "scripts": {
@@ -19,10 +19,8 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "mailtrap": "^3.4.0",
-    "mongoose": "^8.9.3",
-    "O": "file:",
-    "Obis": "file:",
-    "OBIS": "file:"
+    "mongoose": "^8.9.5",
+    "obis2025": "file:"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

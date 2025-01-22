@@ -27,6 +27,11 @@ const userSchema = new mongoose.Schema({
         enum: ["super-admin", "admin-po", "customer"],
         default: "customer",
     },
+    po_bus:{
+        type: mongoose.Schema.Types.ObjectId,
+        ref:'Po_bus',
+        default:null
+    },
 
     resetPasswordToken : String,
     resetPasswordExpiresAt: Date,
