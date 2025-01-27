@@ -1,10 +1,8 @@
-import { User } from "../models/user.model.js"; // Model untuk Admin PO
-import { Bus } from "../models/bus.model.js";  // Model untuk Bus
-import jwt from 'jsonwebtoken'
+import { Bus } from "../models/bus.model.js";
+import { validate_admin_po } from "../middleware/verifyAdminPO.js";
 
 export const add_bus = async (req, res) => {
     const { po_bus_id, nama_bus, kapasitas } = req.body;
-    const token = req.cookies.token;
     try {
         // Validasi input
         if (!po_bus_id || !nama_bus || !kapasitas) {
@@ -17,22 +15,7 @@ export const add_bus = async (req, res) => {
             return res.status(400).json({ success: false, message: "Nama bus already exists" });
         }
 
-        // Validasi apakah po_bus_id valid dan milik admin yang sedang login
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.userId = decoded.userId;
-        const admin = await User.findById(req.userId); 
-
-        // Mengonversi po_bus_id dan admin.po_bus ke string untuk perbandingan
-        const poBusIdString = po_bus_id.toString(); 
-        const adminPoBusString = admin.po_bus.toString();
-
-        // Perbandingan dengan string
-        if (!admin || adminPoBusString !== poBusIdString) {
-            return res.status(403).json({
-                success: false,
-                message: "You do not have permission to add buses for this PO Bus",
-            });
-        }
+       validate_admin_po(req, po_bus_id)
         const newBus = new Bus({
             po_bus: po_bus_id,
             nama_bus,
@@ -53,30 +36,6 @@ export const add_bus = async (req, res) => {
             message: "Server error while adding bus",
         });
     }
-};
-
-export const validate_admin_po = async (req, po_bus_id) => {
-    const token = req.cookies.token;
-    if (!token) {
-        throw new Error("Authentication token is required");
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.userId;
-
-    const admin = await User.findById(req.userId);
-    if (!admin) {
-        throw new Error("Admin not found");
-    }
-
-    const adminPoBusString = admin.po_bus.toString();
-    const poBusIdString = po_bus_id.toString();
-
-    if (adminPoBusString !== poBusIdString) {
-        throw new Error("You do not have permission for this PO Bus");
-    }
-
-    return admin; // Return admin if valid
 };
 
 export const get_bus_by_id = async (req, res) => {
