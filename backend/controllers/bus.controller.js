@@ -15,7 +15,7 @@ export const add_bus = async (req, res) => {
             return res.status(400).json({ success: false, message: "Nama bus already exists" });
         }
 
-       validate_admin_po(req, po_bus_id)
+        validate_admin_po(req, po_bus_id)
         const newBus = new Bus({
             po_bus: po_bus_id,
             nama_bus,
