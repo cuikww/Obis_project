@@ -1,4 +1,4 @@
-import { Po_Bus } from "../models/po.model.js";
+import { Po_Bus } from "../../models/po.model.js";
 import bcryptjs from "bcryptjs";
 
 export const addPO_Bus = async (req, res) => {

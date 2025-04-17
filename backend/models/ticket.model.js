@@ -30,10 +30,10 @@ const ticketSchema = new mongoose.Schema({
         default: 'tersedia',
         required: true
     },
-    ticket_identifier: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref:"Tiket_Identifier",
-        required:true
+    batch_id: {
+        type: String,
+        required: true,
+        index: true
     }
 }, { timestamps: true });
 

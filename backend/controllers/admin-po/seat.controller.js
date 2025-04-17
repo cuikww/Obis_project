@@ -1,19 +1,19 @@
-import { Seat } from "../models/seat.model.js";
-import { Bus } from "../models/bus.model.js";
-import { validate_admin_po } from "../middleware/verifyAdminPO.js"
+import { Seat } from "../../models/seat.model.js";
+import { Bus } from "../../models/bus.model.js";
+import { validate_admin_po } from "../../middleware/verifyAdminPO.js"
 
 // Menambahkan data kursi awal sesuai kapasitas bus
 export const initialize_seats = async (req, res) => {
-    const { bus_id, po_bus_id } = req.body;
+    const { bus_id } = req.body;
 
     try {
         // Validasi admin PO
-        await validate_admin_po(req, po_bus_id);
+        const po_bus_id = await validate_admin_po(req);
 
-        // Cek apakah bus ada dan valid
-        const bus = await Bus.findById(bus_id);
+        // Cek apakah bus milik admin PO yang bersangkutan
+        const bus = await Bus.findOne({ _id: bus_id, po_bus: po_bus_id });
         if (!bus) {
-            return res.status(404).json({ success: false, message: "Bus not found" });
+            return res.status(404).json({ success: false, message: "Bus not found or unauthorized" });
         }
 
         // Hapus kursi yang sudah ada untuk bus ini (jika ada)
@@ -46,10 +46,13 @@ export const get_seats_by_bus = async (req, res) => {
     const { bus_id } = req.params;
 
     try {
-        // Validasi apakah bus ada
-        const bus = await Bus.findById(bus_id);
+        // Validasi admin PO
+        const po_bus_id = await validate_admin_po(req);
+
+        // Validasi apakah bus milik admin PO
+        const bus = await Bus.findOne({ _id: bus_id, po_bus: po_bus_id });
         if (!bus) {
-            return res.status(404).json({ success: false, message: "Bus not found" });
+            return res.status(404).json({ success: false, message: "Bus not found or unauthorized" });
         }
 
         const seats = await Seat.find({ bus_id });
@@ -69,16 +72,16 @@ export const get_seats_by_bus = async (req, res) => {
 
 // Menambahkan kursi secara manual
 export const add_seat = async (req, res) => {
-    const { bus_id, po_bus_id, seat_number } = req.body;
+    const { bus_id, seat_number } = req.body;
 
     try {
         // Validasi admin PO
-        await validate_admin_po(req, po_bus_id);
+        const po_bus_id = await validate_admin_po(req);
 
-        // Validasi bus
-        const bus = await Bus.findById(bus_id);
+        // Validasi bus milik admin PO
+        const bus = await Bus.findOne({ _id: bus_id, po_bus: po_bus_id });
         if (!bus) {
-            return res.status(404).json({ success: false, message: "Bus not found" });
+            return res.status(404).json({ success: false, message: "Bus not found or unauthorized" });
         }
 
         // Cek apakah kursi sudah ada
@@ -107,18 +110,26 @@ export const add_seat = async (req, res) => {
 
 // Menghapus kursi tertentu
 export const delete_seat = async (req, res) => {
-    const { seat_id, po_bus_id } = req.body;
+    const { seat_id } = req.params;
 
     try {
         // Validasi admin PO
-        await validate_admin_po(req, po_bus_id);
+        const po_bus_id = await validate_admin_po(req);
 
-        // Hapus kursi
-        const deletedSeat = await Seat.findByIdAndDelete(seat_id);
-
-        if (!deletedSeat) {
+        // Cek apakah kursi ada dan milik bus yang dikelola oleh admin PO
+        const seat = await Seat.findById(seat_id);
+        if (!seat) {
             return res.status(404).json({ success: false, message: "Seat not found" });
         }
+
+        // Pastikan bus milik PO yang sesuai
+        const bus = await Bus.findOne({ _id: seat.bus_id, po_bus: po_bus_id });
+        if (!bus) {
+            return res.status(403).json({ success: false, message: "Unauthorized action" });
+        }
+
+        // Hapus kursi
+        await Seat.findByIdAndDelete(seat_id);
 
         res.status(200).json({
             success: true,

@@ -1,5 +1,5 @@
-import { Terminal } from "../models/terminal.model.js";
-import { Kota } from "../models/kota.model.js";
+import { Terminal } from "../../models/terminal.model.js";
+import { Kota } from "../../models/kota.model.js";
 
 // Add a new terminal
 export const add_terminal = async (req, res) => {

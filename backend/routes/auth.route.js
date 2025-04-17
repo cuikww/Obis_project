@@ -5,13 +5,20 @@ const router = express.Router();
 
 router.get("/check-auth", verifyToken, checkAuth)
 
-router.post("/signup", signup);
-router.post("/signup-admin-po", admin_po_register);
-router.post("/login", login);
+
 router.post("/logout",logout);
 router.post("/verify-email",verifyEmail);
 router.post("/forgot-password",forgotPassword);
 router.post("/reset-password/:token",resetPassword);
-router.post("/superAdmin-login", SuperAdminLogin);
-router.post("/admin-po-login", admin_po_login)
+
+//sign up
+router.post("/customer/signup", signup); 
+router.post("/admin-po/signup", admin_po_register);
+
+
+//Login
+router.post("/customer/login", login);
+router.post("/admin-po/login", admin_po_login) 
+router.post("/super-admin/login", SuperAdminLogin);
+
 export default router;

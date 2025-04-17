@@ -1,4 +1,4 @@
-import { Kota } from "../models/kota.model.js";
+import { Kota } from "../../models/kota.model.js";
 
 // Tambah kota
 export const add_kota = async (req, res) => {
