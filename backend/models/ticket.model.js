@@ -9,14 +9,14 @@ const ticketSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    kota_keberangkatan: {
+    terminal_keberangkatan: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Terminal',
+        ref: 'Terminal', // Reference to Terminal model
         required: true
     },
-    kota_tujuan: {
+    terminal_tujuan: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Terminal',
+        ref: 'Terminal', // Reference to Terminal model
         required: true
     },
     id_kursi: {

@@ -1,20 +1,24 @@
-// ticket.controller.js
 import { Ticket } from "../../models/ticket.model.js";
 import { Bus } from "../../models/bus.model.js";
 import { Seat } from "../../models/seat.model.js";
+import { Terminal } from "../../models/terminal.model.js";
 import { validate_admin_po } from "../../middleware/verifyAdminPO.js";
 
 // Fungsi untuk menghasilkan batch ID yang ringkas
-const generateBatchId = (busName, kotaKeberangkatan, kotaTujuan) => {
+const generateBatchId = async (busName, terminalKeberangkatanId, terminalTujuanId) => {
     const safeBusName = busName || "BUS"; // Fallback singkat
+    const terminalKeberangkatan = await Terminal.findById(terminalKeberangkatanId).populate("kota", "nama_kota");
+    const terminalTujuan = await Terminal.findById(terminalTujuanId).populate("kota", "nama_kota");
+    const kotaKeberangkatan = terminalKeberangkatan?.kota?.nama_kota || "UNK";
+    const kotaTujuan = terminalTujuan?.kota?.nama_kota || "UNK";
     const timestamp = Date.now().toString().slice(-6); // 6 digit terakhir timestamp
     const randomStr = Math.random().toString(36).substring(2, 5); // 3 karakter random
-    return `${safeBusName.slice(0, 3)}-${kotaKeberangkatan.slice(-4)}-${kotaTujuan.slice(-4)}-${timestamp}-${randomStr}`;
+    return `${safeBusName.slice(0, 3)}-${kotaKeberangkatan.slice(0, 4)}-${kotaTujuan.slice(0, 4)}-${timestamp}-${randomStr}`;
 };
 
 // CREATE: Membuat tiket
 export const create_tickets = async (req, res) => {
-    const { bus_id, waktu_keberangkatan, harga, kota_keberangkatan, kota_tujuan } = req.body;
+    const { bus_id, waktu_keberangkatan, harga, terminal_keberangkatan, terminal_tujuan } = req.body;
 
     try {
         const po_bus_id = await validate_admin_po(req);
@@ -22,6 +26,13 @@ export const create_tickets = async (req, res) => {
         const bus = await Bus.findOne({ _id: bus_id, po_bus: po_bus_id });
         if (!bus) {
             return res.status(404).json({ success: false, message: "Bus not found or unauthorized" });
+        }
+
+        // Validate terminals
+        const terminalKeberangkatanDoc = await Terminal.findById(terminal_keberangkatan);
+        const terminalTujuanDoc = await Terminal.findById(terminal_tujuan);
+        if (!terminalKeberangkatanDoc || !terminalTujuanDoc) {
+            return res.status(404).json({ success: false, message: "One or both terminals not found!" });
         }
 
         let seats = await Seat.find({ bus_id });
@@ -33,13 +44,13 @@ export const create_tickets = async (req, res) => {
             seats = await Seat.insertMany(seatData);
         }
 
-        const batchId = generateBatchId(bus.nama_bus, kota_keberangkatan, kota_tujuan);
+        const batchId = await generateBatchId(bus.nama_bus, terminal_keberangkatan, terminal_tujuan);
 
         const tickets = seats.map(seat => ({
             waktu_keberangkatan,
             harga,
-            kota_keberangkatan,
-            kota_tujuan,
+            terminal_keberangkatan,
+            terminal_tujuan,
             id_kursi: seat._id,
             status_tiket: 'tersedia',
             batch_id: batchId
@@ -62,7 +73,7 @@ export const create_tickets = async (req, res) => {
 // READ: Mendapatkan semua tiket berdasarkan batch_id dengan validasi admin PO
 export const get_tiket_all_by_batch = async (req, res) => {
     try {
-        const po_bus_id = await validate_admin_po(req); // Tambahkan validasi admin PO
+        const po_bus_id = await validate_admin_po(req);
         const { batch_id } = req.params;
 
         if (!batch_id) {
@@ -72,16 +83,15 @@ export const get_tiket_all_by_batch = async (req, res) => {
             });
         }
 
-        // Pastikan tiket terkait dengan bus dari PO yang sama
         const tickets = await Ticket.find({ batch_id }).populate({
             path: 'id_kursi',
             populate: {
                 path: 'bus_id',
-                match: { po_bus: po_bus_id } // Hanya ambil tiket dari bus milik PO ini
+                match: { po_bus: po_bus_id }
             }
-        });
+        }).populate('terminal_keberangkatan', 'nama_terminal kota')
+          .populate('terminal_tujuan', 'nama_terminal kota');
 
-        // Filter tiket yang tidak null setelah populate (jika bus tidak cocok)
         const validTickets = tickets.filter(ticket => ticket.id_kursi && ticket.id_kursi.bus_id);
 
         if (!validTickets.length) {
@@ -122,7 +132,8 @@ export const get_ticket_by_id = async (req, res) => {
                 path: 'bus_id',
                 match: { po_bus: po_bus_id }
             }
-        });
+        }).populate('terminal_keberangkatan', 'nama_terminal kota')
+          .populate('terminal_tujuan', 'nama_terminal kota');
 
         if (!ticket || !ticket.id_kursi || !ticket.id_kursi.bus_id) {
             return res.status(404).json({ success: false, message: "Ticket not found or unauthorized" });
@@ -138,7 +149,7 @@ export const get_ticket_by_id = async (req, res) => {
 // UPDATE: Mengedit semua tiket dalam satu batch
 export const edit_tiket_all_by_batch = async (req, res) => {
     const { batch_id } = req.params;
-    const { waktu_keberangkatan, harga, kota_keberangkatan, kota_tujuan, status_tiket } = req.body;
+    const { waktu_keberangkatan, harga, terminal_keberangkatan, terminal_tujuan, status_tiket } = req.body;
 
     try {
         const po_bus_id = await validate_admin_po(req);
@@ -155,7 +166,6 @@ export const edit_tiket_all_by_batch = async (req, res) => {
             return res.status(404).json({ success: false, message: "Tickets not found or unauthorized" });
         }
 
-        // Cek apakah ada order aktif terkait tiket ini
         const activeOrders = await Order.find({
             ticket_ids: { $in: tickets.map(t => t._id) },
             status: { $in: ['pending', 'paid'] }
@@ -170,8 +180,8 @@ export const edit_tiket_all_by_batch = async (req, res) => {
         const updatedData = {};
         if (waktu_keberangkatan) updatedData.waktu_keberangkatan = waktu_keberangkatan;
         if (harga) updatedData.harga = harga;
-        if (kota_keberangkatan) updatedData.kota_keberangkatan = kota_keberangkatan;
-        if (kota_tujuan) updatedData.kota_tujuan = kota_tujuan;
+        if (terminal_keberangkatan) updatedData.terminal_keberangkatan = terminal_keberangkatan;
+        if (terminal_tujuan) updatedData.terminal_tujuan = terminal_tujuan;
         if (status_tiket && activeOrders.length === 0) updatedData.status_tiket = status_tiket;
 
         const updatedTickets = await Ticket.updateMany(
@@ -180,7 +190,8 @@ export const edit_tiket_all_by_batch = async (req, res) => {
             { new: true }
         );
 
-        const newTickets = await Ticket.find({ batch_id });
+        const newTickets = await Ticket.find({ batch_id }).populate('terminal_keberangkatan', 'nama_terminal kota')
+                                                            .populate('terminal_tujuan', 'nama_terminal kota');
 
         res.status(200).json({
             success: true,
@@ -196,7 +207,7 @@ export const edit_tiket_all_by_batch = async (req, res) => {
 // UPDATE: Mengedit satu tiket berdasarkan ID
 export const edit_ticket_by_id = async (req, res) => {
     const { ticket_id } = req.params;
-    const { waktu_keberangkatan, harga, kota_keberangkatan, kota_tujuan, status_tiket } = req.body;
+    const { waktu_keberangkatan, harga, terminal_keberangkatan, terminal_tujuan, status_tiket } = req.body;
 
     try {
         const po_bus_id = await validate_admin_po(req);
@@ -213,7 +224,6 @@ export const edit_ticket_by_id = async (req, res) => {
             return res.status(404).json({ success: false, message: "Ticket not found or unauthorized" });
         }
 
-        // Cek apakah tiket terkait order aktif
         const activeOrders = await Order.find({
             ticket_ids: ticket._id,
             status: { $in: ['pending', 'paid'] }
@@ -228,15 +238,16 @@ export const edit_ticket_by_id = async (req, res) => {
         const updatedData = {};
         if (waktu_keberangkatan) updatedData.waktu_keberangkatan = waktu_keberangkatan;
         if (harga) updatedData.harga = harga;
-        if (kota_keberangkatan) updatedData.kota_keberangkatan = kota_keberangkatan;
-        if (kota_tujuan) updatedData.kota_tujuan = kota_tujuan;
+        if (terminal_keberangkatan) updatedData.terminal_keberangkatan = terminal_keberangkatan;
+        if (terminal_tujuan) updatedData.terminal_tujuan = terminal_tujuan;
         if (status_tiket && activeOrders.length === 0) updatedData.status_tiket = status_tiket;
 
         const updatedTicket = await Ticket.findByIdAndUpdate(
             ticket_id,
             { $set: updatedData },
             { new: true }
-        );
+        ).populate('terminal_keberangkatan', 'nama_terminal kota')
+         .populate('terminal_tujuan', 'nama_terminal kota');
 
         res.status(200).json({
             success: true,

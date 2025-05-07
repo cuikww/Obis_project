@@ -1,56 +1,54 @@
-// customer/ticket.controller.js
 import { Ticket } from "../../models/ticket.model.js";
 import { Terminal } from "../../models/terminal.model.js";
 
 // Fungsi bantu untuk memvalidasi input
-const validateInput = (kotaKeberangkatan, kotaTujuan, tanggalKeberangkatan) => {
-    if (!kotaKeberangkatan || !kotaTujuan) {
+const validateInput = (kota_keberangkatan, kota_tujuan, tanggal_keberangkatan) => {
+    if (!kota_keberangkatan || !kota_tujuan) {
         throw new Error("Kota keberangkatan dan tujuan harus diisi!");
     }
-    if (tanggalKeberangkatan && !/^\d{4}-\d{2}-\d{2}$/.test(tanggalKeberangkatan)) {
+    if (tanggal_keberangkatan && !/^\d{4}-\d{2}-\d{2}$/.test(tanggal_keberangkatan)) {
         throw new Error("Format tanggal keberangkatan harus YYYY-MM-DD!");
     }
 };
 
 // Fungsi bantu untuk mendapatkan ID terminal berdasarkan kota
 const getTerminalIds = async (kotaId) => {
-    const terminals = await Terminal.find({ kota: kotaId });
+    const terminals = await Terminal.find({ kota: kotaId }).select('_id');
     if (!terminals.length) {
-        throw new Error("Tidak ada terminal yang ditemukan untuk kota tersebut!");
+        throw new Error(`Tidak ada terminal yang ditemukan untuk kota dengan ID ${kotaId}!`);
     }
     return terminals.map(terminal => terminal._id);
 };
 
-// Fungsi bantu untuk mengambil tiket berdasarkan terminal dan tanggal
-const fetchTickets = async (terminalIdsKeberangkatan, terminalIdsTujuan, tanggalKeberangkatan) => {
+// Fungsi bantu untuk mengambil tiket berdasarkan kota dan tanggal
+const fetchTicketsByCity = async (kota_keberangkatan, kota_tujuan, tanggal_keberangkatan) => {
+    // Get all terminal IDs for the given kota IDs
+    const terminalIdsKeberangkatan = await getTerminalIds(kota_keberangkatan);
+    const terminalIdsTujuan = await getTerminalIds(kota_tujuan);
+
+    // Build query to match tickets where terminal_keberangkatan and terminal_tujuan match the terminal IDs
     const query = {
-        kota_keberangkatan: { $in: terminalIdsKeberangkatan },
-        kota_tujuan: { $in: terminalIdsTujuan }
+        terminal_keberangkatan: { $in: terminalIdsKeberangkatan },
+        terminal_tujuan: { $in: terminalIdsTujuan }
     };
 
-    if (tanggalKeberangkatan) {
-        const startOfDay = new Date(tanggalKeberangkatan);
-        startOfDay.setUTCHours(0, 0, 0, 0);
-        const endOfDay = new Date(tanggalKeberangkatan);
-        endOfDay.setUTCHours(23, 59, 59, 999);
-
-        query.waktu_keberangkatan = {
-            $gte: startOfDay,
-            $lte: endOfDay
-        };
+    if (tanggal_keberangkatan) {
+        const startOfDay = new Date(`${tanggal_keberangkatan}T00:00:00.000Z`);
+        const endOfDay = new Date(`${tanggal_keberangkatan}T23:59:59.999Z`);
+        query.waktu_keberangkatan = { $gte: startOfDay, $lte: endOfDay };
     }
 
     const tickets = await Ticket.find(query)
         .populate({
             path: 'id_kursi',
-            populate: { path: 'bus_id', select: 'nama_bus kapasitas' }
+            populate: { path: 'bus_id', select: 'nama_bus kapasitas po_bus' }
         })
         .populate({
-            path: 'kota_keberangkatan',
+            path: 'terminal_keberangkatan',
             populate: { path: 'kota', select: 'nama_kota' }
         })
         .populate({
-            path: 'kota_tujuan',
+            path: 'terminal_tujuan',
             populate: { path: 'kota', select: 'nama_kota' }
         });
 
@@ -62,29 +60,31 @@ const fetchTickets = async (terminalIdsKeberangkatan, terminalIdsTujuan, tanggal
 
 // Fungsi bantu untuk mengelompokkan tiket berdasarkan batch
 const groupByBatch = (tickets) => {
-    const batchMap = {};
-    tickets.forEach(ticket => {
-        batchMap[ticket.batch_id] = batchMap[ticket.batch_id] || [];
-        batchMap[ticket.batch_id].push(ticket);
-    });
-    return batchMap;
+    return tickets.reduce((acc, ticket) => {
+        acc[ticket.batch_id] = acc[ticket.batch_id] || [];
+        acc[ticket.batch_id].push(ticket);
+        return acc;
+    }, {});
 };
 
-// Fungsi bantu untuk memformat satu batch
+// Fungsi bantu untuk memformat satu batch (ringkasan)
 const formatBatch = (batchTickets) => {
     const firstTicket = batchTickets[0];
     const availableTickets = batchTickets.filter(t => t.status_tiket === 'tersedia').length;
 
     return {
         batch_id: firstTicket.batch_id,
-        bus: firstTicket.id_kursi?.bus_id?.nama_bus ?? "Bus Tidak Diketahui",
+        bus: {
+            nama_bus: firstTicket.id_kursi?.bus_id?.nama_bus ?? "Bus Tidak Diketahui",
+            kapasitas: firstTicket.id_kursi?.bus_id?.kapasitas ?? 0
+        },
         keberangkatan: {
-            kota: firstTicket.kota_keberangkatan?.kota?.nama_kota ?? "Tidak Diketahui",
-            terminal: firstTicket.kota_keberangkatan?.nama_terminal ?? "Terminal Tidak Diketahui"
+            terminal: firstTicket.terminal_keberangkatan?.nama_terminal ?? "Terminal Tidak Diketahui",
+            kota: firstTicket.terminal_keberangkatan?.kota?.nama_kota ?? "Tidak Diketahui"
         },
         tujuan: {
-            kota: firstTicket.kota_tujuan?.kota?.nama_kota ?? "Tidak Diketahui",
-            terminal: firstTicket.kota_tujuan?.nama_terminal ?? "Terminal Tidak Diketahui"
+            terminal: firstTicket.terminal_tujuan?.nama_terminal ?? "Terminal Tidak Diketahui",
+            kota: firstTicket.terminal_tujuan?.kota?.nama_kota ?? "Tidak Diketahui"
         },
         waktu_keberangkatan: firstTicket.waktu_keberangkatan,
         harga: firstTicket.harga,
@@ -94,21 +94,25 @@ const formatBatch = (batchTickets) => {
     };
 };
 
-// Fungsi bantu untuk memformat detail batch
+// Fungsi bantu untuk memformat detail batch (lengkap)
 const formatBatchDetail = (tickets) => {
     const firstTicket = tickets[0];
     const availableTickets = tickets.filter(t => t.status_tiket === 'tersedia');
 
     return {
         batch_id: firstTicket.batch_id,
-        bus: firstTicket.id_kursi?.bus_id?.nama_bus ?? "Bus Tidak Diketahui",
+        bus: {
+            nama_bus: firstTicket.id_kursi?.bus_id?.nama_bus ?? "Bus Tidak Diketahui",
+            kapasitas: firstTicket.id_kursi?.bus_id?.kapasitas ?? 0,
+            po_bus: firstTicket.id_kursi?.bus_id?.po_bus ?? "PO Tidak Diketahui"
+        },
         keberangkatan: {
-            kota: firstTicket.kota_keberangkatan?.kota?.nama_kota ?? "Tidak Diketahui",
-            terminal: firstTicket.kota_keberangkatan?.nama_terminal ?? "Terminal Tidak Diketahui"
+            terminal: firstTicket.terminal_keberangkatan?.nama_terminal ?? "Terminal Tidak Diketahui",
+            kota: firstTicket.terminal_keberangkatan?.kota?.nama_kota ?? "Tidak Diketahui"
         },
         tujuan: {
-            kota: firstTicket.kota_tujuan?.kota?.nama_kota ?? "Tidak Diketahui",
-            terminal: firstTicket.kota_tujuan?.nama_terminal ?? "Terminal Tidak Diketahui"
+            terminal: firstTicket.terminal_tujuan?.nama_terminal ?? "Terminal Tidak Diketahui",
+            kota: firstTicket.terminal_tujuan?.kota?.nama_kota ?? "Tidak Diketahui"
         },
         waktu_keberangkatan: firstTicket.waktu_keberangkatan,
         harga: firstTicket.harga,
@@ -116,9 +120,11 @@ const formatBatchDetail = (tickets) => {
         total_kursi: tickets.length,
         status: availableTickets.length > 0 ? "Tersedia" : "Habis",
         kursi_detail: tickets.map(ticket => ({
-            ticket_id: ticket._id, // Tambahkan ticket_id
+            ticket_id: ticket._id.toString(),
             kursi_nomor: ticket.id_kursi?.seat_number ?? "Tidak Diketahui",
-            status: ticket.status_tiket
+            status: ticket.status_tiket,
+            waktu_dibuat: ticket.createdAt,
+            waktu_diubah: ticket.updatedAt
         }))
     };
 };
@@ -130,9 +136,7 @@ export const get_available_tickets = async (req, res) => {
 
         validateInput(kota_keberangkatan, kota_tujuan, tanggal_keberangkatan);
 
-        const terminalIdsKeberangkatan = await getTerminalIds(kota_keberangkatan);
-        const terminalIdsTujuan = await getTerminalIds(kota_tujuan);
-        const tickets = await fetchTickets(terminalIdsKeberangkatan, terminalIdsTujuan, tanggal_keberangkatan);
+        const tickets = await fetchTicketsByCity(kota_keberangkatan, kota_tujuan, tanggal_keberangkatan);
 
         const batchMap = groupByBatch(tickets);
         const batches = Object.values(batchMap)
@@ -165,14 +169,14 @@ export const get_batch_detail = async (req, res) => {
         const tickets = await Ticket.find({ batch_id })
             .populate({
                 path: 'id_kursi',
-                populate: { path: 'bus_id', select: 'nama_bus kapasitas' }
+                populate: { path: 'bus_id', select: 'nama_bus kapasitas po_bus' }
             })
             .populate({
-                path: 'kota_keberangkatan',
+                path: 'terminal_keberangkatan',
                 populate: { path: 'kota', select: 'nama_kota' }
             })
             .populate({
-                path: 'kota_tujuan',
+                path: 'terminal_tujuan',
                 populate: { path: 'kota', select: 'nama_kota' }
             });
 
