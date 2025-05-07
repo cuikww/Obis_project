@@ -25,18 +25,34 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Configure CORS to allow requests from frontend
-app.use(
-  cors({
-    origin: "http://localhost:5173", // Allow frontend origin
-    credentials: true, // Allow cookies and credentials
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Allow necessary methods
-    allowedHeaders: ["Content-Type", "Authorization"], // Allow necessary headers
-  })
-);
+// Custom CORS middleware with dynamic origin handling
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'http://localhost:5173', // Local frontend
+      'https://obis-project.vercel.app', // Deployed frontend
+      'http://10.0.2.2:5000', // Android emulator local backend
+    ];
 
+    // Allow requests with no origin (e.g., Android app or curl)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'), false);
+    }
+  },
+  credentials: true, // Allow cookies and authorization headers
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Allow necessary methods
+  allowedHeaders: ["Content-Type", "Authorization"], // Allow necessary headers
+  optionsSuccessStatus: 200, // Respond with 200 for OPTIONS pre-flight
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
+
+// Handle pre-flight OPTIONS requests explicitly
+app.options('*', cors(corsOptions));
 
 app.use("/auth", authRoutes);
 app.use("/super-admin", po_Bus_Routes);
