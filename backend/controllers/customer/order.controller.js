@@ -68,7 +68,6 @@ export const order_tickets = async (req, res) => {
 };
 
 // Melihat Riwayat Pemesanan
-// Melihat Riwayat Pemesanan
 export const get_order_history = async (req, res) => {
     try {
         const customer_id = req.userId;
@@ -77,7 +76,15 @@ export const get_order_history = async (req, res) => {
             .populate({
                 path: "ticket_ids",
                 populate: [
-                    { path: "id_kursi", model: "Seat" }, // Tetap populate kursi
+                    { 
+                        path: "id_kursi", 
+                        model: "Seat",
+                        populate: {
+                            path: "bus_id", // Populate bus_id di Seat
+                            model: "Bus",
+                            select: "nama_bus" // Hanya ambil nama_bus
+                        }
+                    },
                     { 
                         path: "terminal_keberangkatan", 
                         model: "Terminal", 
@@ -121,9 +128,13 @@ export const get_order_history = async (req, res) => {
                     nama_terminal: ticket.terminal_tujuan?.nama_terminal || "Unknown Terminal",
                     kota: ticket.terminal_tujuan?.kota?.nama_kota || "Unknown City"
                 },
-                id_kursi: ticket.id_kursi,
+                id_kursi: {
+                    _id: ticket.id_kursi?._id,
+                    seat_number: ticket.id_kursi?.seat_number
+                },
                 status_tiket: ticket.status_tiket,
-                batch_id: ticket.batch_id
+                batch_id: ticket.batch_id,
+                nama_bus: ticket.id_kursi?.bus_id?.nama_bus || "Unknown Bus", // Ambil nama_bus dari relasi
             })),
             total_price: order.total_price,
             status: order.status,
