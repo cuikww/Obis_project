@@ -33,8 +33,14 @@ export const get_orders_by_po = async (req, res) => {
             .populate({
                 path: "ticket_ids",
                 populate: [
-                    { path: "kota_keberangkatan", select: "nama_kota" },
-                    { path: "kota_tujuan", select: "nama_kota" },
+                    {
+                        path: "terminal_keberangkatan", // Rujuk ke Terminal
+                        populate: { path: "kota", select: "nama_kota" }, // Populate kota dari Terminal
+                    },
+                    {
+                        path: "terminal_tujuan", // Rujuk ke Terminal
+                        populate: { path: "kota", select: "nama_kota" }, // Populate kota dari Terminal
+                    },
                     {
                         path: "id_kursi",
                         populate: { path: "bus_id", select: "nama_bus" },
@@ -156,6 +162,7 @@ export const create_order_offline = async (req, res) => {
 };
 
 // UPDATE: Memperbarui order (hanya untuk order offline)
+// UPDATE: Memperbarui order (hanya untuk order offline)
 export const update_order = async (req, res) => {
     try {
         const po_bus_id = await validate_admin_po(req);
@@ -163,7 +170,7 @@ export const update_order = async (req, res) => {
         const { ticket_ids, status, nama, no_telepon, email } = req.body;
 
         // Cari order
-        const order = await Order.findById(order_id);
+        const order = await Order.findById(order_id).populate("ticket_ids");
         if (!order) {
             return res.status(404).json({
                 success: false,
@@ -180,7 +187,7 @@ export const update_order = async (req, res) => {
         }
 
         // Validasi bahwa order terkait dengan PO
-        const tickets = await Ticket.find({ _id: { $in: order.ticket_ids } });
+        const tickets = await Ticket.find({ _id: { $in: order.ticket_ids.map(t => t._id) } });
         const busIds = await Seat.find({
             _id: { $in: tickets.map((t) => t.id_kursi) },
         }).distinct("bus_id");
@@ -192,31 +199,53 @@ export const update_order = async (req, res) => {
             });
         }
 
-        // Jika ticket_ids diperbarui, hitung ulang total_price
+        // Jika ticket_ids diperbarui
         if (ticket_ids) {
-            const newTickets = await Ticket.find({
-                _id: { $in: ticket_ids },
-                status_tiket: "tersedia",
-            });
+            // Validasi bahwa semua tiket baru ada dan valid
+            const newTickets = await Ticket.find({ _id: { $in: ticket_ids } });
             if (newTickets.length !== ticket_ids.length) {
                 return res.status(400).json({
                     success: false,
-                    message: "Some ticket IDs are invalid or not available",
+                    message: "Some ticket IDs are invalid",
                 });
             }
+
+            // Validasi bahwa tiket baru terkait dengan PO yang sama
+            const newBusIds = await Seat.find({
+                _id: { $in: newTickets.map((t) => t.id_kursi) },
+            }).distinct("bus_id");
+            const newBuses = await Bus.find({ _id: { $in: newBusIds }, po_bus: po_bus_id });
+            if (newBuses.length !== newBusIds.length) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Some new tickets belong to buses not managed by this PO",
+                });
+            }
+
+            // Pisahkan tiket lama dan baru
+            const existingTicketIds = order.ticket_ids.map(t => t._id.toString());
+            const oldTicketIds = existingTicketIds.filter(id => !ticket_ids.includes(id));
+            const newTicketIds = ticket_ids.filter(id => !existingTicketIds.includes(id));
+
+            // Hitung ulang total_price
             order.ticket_ids = ticket_ids;
             order.total_price = newTickets.reduce((sum, ticket) => sum + ticket.harga, 0);
 
-            // Kembalikan status tiket lama ke "tersedia"
-            await Ticket.updateMany(
-                { _id: { $in: order.ticket_ids } },
-                { status_tiket: "tersedia" }
-            );
-            // Update status tiket baru ke "terjual"
-            await Ticket.updateMany(
-                { _id: { $in: ticket_ids } },
-                { status_tiket: "terjual" }
-            );
+            // Kembalikan status tiket lama ke "tersedia" (jika ada tiket yang dihapus)
+            if (oldTicketIds.length > 0) {
+                await Ticket.updateMany(
+                    { _id: { $in: oldTicketIds } },
+                    { status_tiket: "tersedia" }
+                );
+            }
+
+            // Update status tiket baru ke "terjual" (jika ada tiket baru)
+            if (newTicketIds.length > 0) {
+                await Ticket.updateMany(
+                    { _id: { $in: newTicketIds } },
+                    { status_tiket: "terjual" }
+                );
+            }
         }
 
         // Update data lainnya

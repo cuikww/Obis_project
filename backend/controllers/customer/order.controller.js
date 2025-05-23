@@ -68,6 +68,7 @@ export const order_tickets = async (req, res) => {
 };
 
 // Melihat Riwayat Pemesanan
+// Melihat Riwayat Pemesanan
 export const get_order_history = async (req, res) => {
     try {
         const customer_id = req.userId;
@@ -75,14 +76,62 @@ export const get_order_history = async (req, res) => {
         const orders = await Order.find({ customer_id })
             .populate({
                 path: "ticket_ids",
-                populate: { path: "id_kursi", model: "Seat" },
+                populate: [
+                    { path: "id_kursi", model: "Seat" }, // Tetap populate kursi
+                    { 
+                        path: "terminal_keberangkatan", 
+                        model: "Terminal", 
+                        populate: { 
+                            path: "kota", 
+                            model: "Kota", 
+                            select: "nama_kota" 
+                        },
+                        select: "nama_terminal" 
+                    },
+                    { 
+                        path: "terminal_tujuan", 
+                        model: "Terminal", 
+                        populate: { 
+                            path: "kota", 
+                            model: "Kota", 
+                            select: "nama_kota" 
+                        },
+                        select: "nama_terminal" 
+                    }
+                ]
             });
 
         if (!orders.length) {
             return res.status(404).json({ success: false, message: "No order history found!" });
         }
 
-        res.status(200).json({ success: true, orders });
+        // Transformasi respons agar lebih ramah frontend
+        const formattedOrders = orders.map(order => ({
+            _id: order._id,
+            customer_id: order.customer_id,
+            ticket_ids: order.ticket_ids.map(ticket => ({
+                _id: ticket._id,
+                waktu_keberangkatan: ticket.waktu_keberangkatan,
+                harga: ticket.harga,
+                terminal_keberangkatan: {
+                    nama_terminal: ticket.terminal_keberangkatan?.nama_terminal || "Unknown Terminal",
+                    kota: ticket.terminal_keberangkatan?.kota?.nama_kota || "Unknown City"
+                },
+                terminal_tujuan: {
+                    nama_terminal: ticket.terminal_tujuan?.nama_terminal || "Unknown Terminal",
+                    kota: ticket.terminal_tujuan?.kota?.nama_kota || "Unknown City"
+                },
+                id_kursi: ticket.id_kursi,
+                status_tiket: ticket.status_tiket,
+                batch_id: ticket.batch_id
+            })),
+            total_price: order.total_price,
+            status: order.status,
+            order_date: order.order_date,
+            payment_info: order.payment_info
+        }));
+
+        res.status(200).json({ success: true, orders: formattedOrders });
     } catch (error) {
         console.error("Error fetching order history:", error);
         res.status(500).json({ success: false, message: "Server error while fetching order history" });
