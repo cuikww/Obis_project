@@ -1,5 +1,5 @@
 import express from "express";
-import { signup, login, logout, verifyEmail, forgotPassword, resetPassword, checkAuth, SuperAdminLogin, admin_po_register, admin_po_login} from "../controllers/auth.controller.js";
+import { signup, login, logout, verifyEmail, forgotPassword, resetPassword, checkAuth, SuperAdminLogin, admin_po_register, admin_po_login, updateUser} from "../controllers/auth.controller.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 const router = express.Router();
 
