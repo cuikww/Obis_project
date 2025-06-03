@@ -21,4 +21,6 @@ router.post("/customer/login", login);
 router.post("/admin-po/login", admin_po_login) 
 router.post("/super-admin/login", SuperAdminLogin);
 
+router.patch('/update', verifyToken, updateUser);
+
 export default router;

@@ -273,3 +273,49 @@ export const admin_po_login = async(req, res) => {
         res.status(400).json({success:false, message : error.message})
     }
 }
+
+// Update user name, password, or both
+export const updateUser = async (req, res) => {
+    try {
+        const { name, password } = req.body;
+        const userId = req.userId; // From verifyToken middleware
+
+        // Check if user exists
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        // Check if at least one field is provided
+        if (!name && !password) {
+            return res.status(400).json({ success: false, message: 'At least one field (name or password) is required' });
+        }
+
+        // Update name if provided
+        if (name) {
+            user.name = name;
+        }
+
+        // Update password if provided
+        if (password) {
+            const hashedPassword = await bcryptjs.hash(password, 10);
+            user.password = hashedPassword;
+        }
+
+        // Save updated user
+        await user.save();
+
+        // Respond with updated user (excluding password)
+        res.status(200).json({
+            success: true,
+            message: 'User updated successfully',
+            user: {
+                ...user._doc,
+                password: undefined,
+            },
+        });
+    } catch (error) {
+        console.error('Error updating user:', error);
+        res.status(500).json({ success: false, message: 'Server error while updating user' });
+    }
+};
